@@ -1,12 +1,14 @@
 const Excel = require("exceljs");
-var _ = require('lodash');
+const _ = require("lodash");
+
+let maps = {};
 
 (async function () {
   const workbook = new Excel.Workbook();
 
   await workbook.xlsx.readFile("./client.xlsx");
   let worksheet1 = workbook.getWorksheet(1);
-  await workbook.xlsx.readFile("./对照表.xlsx");
+  await workbook.xlsx.readFile("./contrast.xlsx");
   let worksheet2 = workbook.getWorksheet(1);
   await workbook.xlsx.readFile("./us.xlsx");
   let worksheet3 = workbook.getWorksheet(1);
@@ -21,8 +23,9 @@ var _ = require('lodash');
       const row_value = row.values;
       row_value.shift();
       contrast_map_client[row_value[1]] = row_value;
-      contrast_map_us[row_value[2]] = row_value[row_value.length - 1];
+      contrast_map_us[row_value[2]] = row_value;
     });
+    maps = contrast_map_us;
     resolve({ contrast_map_client, contrast_map_us });
   })
     .then((res) => {
@@ -46,6 +49,7 @@ var _ = require('lodash');
         const price = contrast_map_client[values[0]][3];
         values.splice(0, 0, sd);
         values.splice(4, 0, price);
+        // values.splice(0, 0, rowNumber);
         if (values[values.length - 1] > 0) {
           client_values_positive.push(values);
         } else {
@@ -78,8 +82,11 @@ var _ = require('lodash');
           us_header = values;
           return;
         }
-        const price = contrast_map_us[values[0]] ?contrast_map_us[values[0]]:0;
+        const price = contrast_map_us[values[0]]
+          ? contrast_map_us[values[0]][3]
+          : 0;
         values.splice(2, 0, price);
+        // values.splice(0, 0, rowNumber);
         if (values[values.length - 1] > 0) {
           us_values_positive.push(values);
         } else {
@@ -89,10 +96,9 @@ var _ = require('lodash');
       let client_positive_tmp = _.cloneDeep(client_values_positive);
       let client_negative_tmp = _.cloneDeep(client_values_negative);
       let us_positive_tmp = _.cloneDeep(us_values_positive);
-      let us_negative_tmp =  _.cloneDeep(us_values_negative)
+      let us_negative_tmp = _.cloneDeep(us_values_negative);
       let final_header = client_header.concat(us_header);
       final_header = final_header.map((item) => ({ name: item }));
-
       let original_single_array = countSignArray(
         client_values_positive,
         client_values_negative,
@@ -147,7 +153,7 @@ function turnArrayToObject(original) {
   }
   Object.keys(final_obj).forEach((key) => {
     return final_obj[key].sort(function (a, b) {
-      return a[a.length - 1] - b[b.length - 1];
+      return b[b.length - 1] - a[a.length - 1];
     });
   });
   return final_obj;
@@ -163,16 +169,31 @@ function countMergeArray(
   let client_merge_negative = mergeCount(client_values_negative, 0, 3);
   let us_merge_positive = mergeCount(us_values_positive, 0, 2);
   let us_merge_negative = mergeCount(us_values_negative, 0, 2);
-  let final_merge_client_values = client_merge_positive.concat(
-    client_merge_negative
+  let client_merge_positive_map = turnArrayToObject(client_merge_positive);
+  let client_merge_negative_map = turnArrayToObject(client_merge_negative);
+  let us_merge_positive_map = turnArrayToObject(us_merge_positive);
+  let us_merge_negative_map = turnArrayToObject(us_merge_negative);
+
+  let merge_positive_array = signCountAllValues(
+    client_merge_positive_map,
+    us_merge_positive_map
   );
-  let final_merge_us_values = us_merge_positive.concat(us_merge_negative);
 
-  let client_merge_group_map = turnArrayToObject(final_merge_client_values);
-  let us_merge_group_map = turnArrayToObject(final_merge_us_values);
+  let merge_negative_array = signCountAllValues(
+    client_merge_negative_map,
+    us_merge_negative_map
+  );
 
-  let merge_array = countAllValues(client_merge_group_map, us_merge_group_map);
-  return merge_array;
+  let merge_final_array = merge_positive_array.concat(merge_negative_array);
+  let merge_final_map = {};
+  merge_final_map = turnArrayToObject(merge_final_array);
+  let original_merge_array = [];
+  Object.values(merge_final_map).forEach((array) => {
+    for (let arr of array) {
+      original_merge_array.push(arr);
+    }
+  });
+  return original_merge_array;
 }
 function countSignArray(
   client_values_positive,
@@ -184,15 +205,17 @@ function countSignArray(
   let all_client_negative = turnArrayToObject(client_values_negative);
   let all_us_positive = turnArrayToObject(us_values_positive);
   let all_us_negative = turnArrayToObject(us_values_negative);
- 
+
   let single_positive_array = signCountAllValues(
     all_client_positive,
     all_us_positive
   );
+
   let single_negative_array = signCountAllValues(
     all_client_negative,
     all_us_negative
   );
+
   let single_final_array = single_positive_array.concat(single_negative_array);
   let single_final_map = {};
   single_final_map = turnArrayToObject(single_final_array);
@@ -212,116 +235,113 @@ function signCountAllValues(client_group_map, us_group_map) {
   Object.keys(client_group_map_tmp).map((key) => {
     let client_array = client_group_map_tmp[key];
     let us_array = us_group_map_tmp[key];
-    if (!us_array && client_array) {
+    if (!us_array) {
       for (let i of client_array) {
-        let array = i.concat([key, "", 0]);
+        let array = i.concat([key, maps[key][3], 0]);
         tableData.push(array);
       }
     } else {
-      let tmp = us_array;
-      for (let i in client_array) {
-        let array = [];
-        if (us_array[i]) {
-          us_array[i].splice(2, 1);
-          array = client_array[i].concat(us_array[i]);
-          tmp.splice(i, 1);
-        } else {
-          array = client_array[i].concat([key, "", 0]);
+      if (client_array.length === us_array.length) {
+        let client_array_back = _.cloneDeep(client_array);
+        let us_array_back = _.cloneDeep(us_array);
+        for (let i in client_array_back) {
+          let array = [];
+          if (us_array_back[i]) {
+            us_array_back[i].splice(2, 1);
+            array = client_array_back[i].concat(us_array_back[i]);
+          } else {
+            array = client_array_back[i].concat([key, maps[key][3], 0]);
+          }
+          tableData.push(array);
         }
-        tableData.push(array);
-      }
-
-      if (tmp.length > 0) {
-        for (let i of tmp) {
+      } else if (client_array.length > us_array.length) {
+        let client_array_back = _.cloneDeep(client_array);
+        let us_array_back = _.cloneDeep(us_array);
+        let array = [];
+        for (let i = 0; i < us_array_back.length; i++) {
+          us_array_back[i].splice(2, 1);
+          array = client_array_back[i].concat(us_array_back[i]);
+          tableData.push(array);
+        }
+        let cut_array = client_array_back.splice(us_array_back.length);
+        for (let i of cut_array) {
+          array = i.concat([key, maps[key][3], 0]);
+          tableData.push(array);
+        }
+      } else if (client_array.length < us_array.length) {
+        let client_array_back = _.cloneDeep(client_array);
+        let us_array_back = _.cloneDeep(us_array);
+        for (let i = 0; i < client_array_back.length; i++) {
+          us_array_back[i].splice(2, 1);
+          array = client_array_back[i].concat(us_array_back[i]);
+          tableData.push(array);
+        }
+        let cut_array = us_array_back.splice(client_array_back.length);
+        for (let i of cut_array) {
           i.splice(2, 1);
           let client = [
             i[0],
-            client_array[client_array.length - 1][1],
-            client_array[client_array.length - 1][2],
+            maps[i[0]][1],
+            maps[i[0]][0],
             0,
-            client_array[client_array.length - 1][3],
+            maps[i[0]][3],
             0,
             ...i,
           ];
           tableData.push(client);
         }
       }
+      delete us_group_map_tmp[key];
     }
+    delete client_group_map_tmp[key];
   });
-  return tableData;
-}
 
-function countAllValues(client_group_map, us_group_map) {
-  let client_group_map_tmp = _.cloneDeep(client_group_map);
-  let us_group_map_tmp = _.cloneDeep(us_group_map);
-  let tableData = [];
-  Object.keys(client_group_map_tmp).map((key) => {
-    let client_array = client_group_map_tmp[key];
-    let us_array = us_group_map_tmp[key];
-    if (us_array && us_array.length > client_array.length) {
-      client_array.map((client, idx) => {
-        us_array.forEach((us, i) => {
-          if (
-            (client[3] === us[2] &&
-              client[client.length - 1] > 0 &&
-              us[us.length - 1] > 0) ||
-            (client[client.length - 1] < 0 && us[us.length - 1] < 0)
-          ) {
-            us.splice(2, 1);
-            client = client.concat(us);
-            us_array.splice(i, 1);
-            tableData.push(client);
-          }
-        });
+  const left_client_map = Object.keys(client_group_map_tmp);
+  const left_us_map = Object.keys(us_group_map_tmp);
+  if (left_client_map.length > 0) {
+    left_client_map.forEach((key) => {
+      left_client_map[key].forEach((item) => {
+        item.splice(0, 1);
+        let arr = item.concat([key, maps[key][3], 0]);
+        tableData.push(arr);
       });
-      for (let i of us_array) {
-        i.splice(2, 1);
-        let client = [
-          i[0],
-          client_array[client_array.length - 1][1],
-          client_array[client_array.length - 1][2],
+    });
+  }
+  if (left_us_map.length > 0) {
+    left_us_map.forEach((key) => {
+      us_group_map_tmp[key].forEach((item) => {
+        let backup_item = _.cloneDeep(item);
+        backup_item.splice(2, 1);
+        let client_number = maps[backup_item[0]][1];
+        let client_specifications = maps[backup_item[0]][0];
+        let client_price = maps[backup_item[0]][3];
+        let arr = [
+          backup_item[0],
+          client_number,
+          client_specifications,
           0,
-          client_array[client_array.length - 1][3],
+          client_price,
           0,
-          ...i,
+          ...backup_item,
         ];
-        tableData.push(client);
-      }
-    } else {
-      if (!us_array) return;
-      client_array.map((client, idx) => {
-        if (us_array.length === 0) {
-          client = client.concat([key, "", 0]);
-        } else {
-          us_array.forEach((us, i) => {
-            if (
-              (client[3] === us[2] &&
-                client[client.length - 1] > 0 &&
-                us[us.length - 1] > 0) ||
-              (client[client.length - 1] < 0 && us[us.length - 1] < 0)
-            ) {
-              us.splice(2, 1);
-              client = client.concat(us);
-              us_array.splice(i, 1);
-            } else {
-              client = client.concat([key, "", 0]);
-            }
-          });
-        }
-        tableData.push(client);
+        tableData.push(arr);
       });
-    }
-  });
+    });
+  }
   return tableData;
 }
 
 async function createNewWorkbook(tableHeader, merge_data, single_data) {
   const workbook = new Excel.Workbook();
   const workSheetOne = workbook.addWorksheet("合并", {
-    properties: { defaultColWidth: 20 },
+    properties: {
+      defaultColWidth: 20,
+    },
   });
   const workSheetTwo = workbook.addWorksheet("单行", {
-    properties: { defaultColWidth: 20 },
+    properties: {
+      defaultColWidth: 20,
+    },
   });
   workSheetOne.addTable({
     name: "MyTable",
@@ -345,36 +365,52 @@ async function createNewWorkbook(tableHeader, merge_data, single_data) {
       row.getCell(values.length).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFed1941" },
+        fgColor: {
+          argb: "FFed1941",
+        },
       };
       row.getCell(values.length).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
       row.getCell(6).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFed1941" },
+        fgColor: {
+          argb: "FFed1941",
+        },
       };
       row.getCell(6).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
     }
     if (values[3] !== values[4]) {
       row.getCell(4).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF426ab3" },
+        fgColor: {
+          argb: "FF426ab3",
+        },
       };
       row.getCell(4).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
       row.getCell(5).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF426ab3" },
+        fgColor: {
+          argb: "FF426ab3",
+        },
       };
       row.getCell(5).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
     }
   });
@@ -386,36 +422,52 @@ async function createNewWorkbook(tableHeader, merge_data, single_data) {
       row.getCell(values.length).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFed1941" },
+        fgColor: {
+          argb: "FFed1941",
+        },
       };
       row.getCell(values.length).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
       row.getCell(6).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFed1941" },
+        fgColor: {
+          argb: "FFed1941",
+        },
       };
       row.getCell(6).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
     }
     if (values[3] !== values[4]) {
       row.getCell(4).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF426ab3" },
+        fgColor: {
+          argb: "FF426ab3",
+        },
       };
       row.getCell(4).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
       row.getCell(5).fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF426ab3" },
+        fgColor: {
+          argb: "FF426ab3",
+        },
       };
       row.getCell(5).font = {
-        color: { argb: "FFFFFFFB" },
+        color: {
+          argb: "FFFFFFFB",
+        },
       };
     }
   });
