@@ -139,6 +139,7 @@ function mergeCount(original, start, price_idx) {
   return array;
 }
 
+//转化数组为Object对象最后根据数量倒叙排序
 function turnArrayToObject(original) {
   let tmp_original = _.cloneDeep(original);
   let final_obj = {};
@@ -159,42 +160,55 @@ function turnArrayToObject(original) {
   return final_obj;
 }
 
+
+// 合并sheet页计算
 function countMergeArray(
   client_values_positive,
   client_values_negative,
   us_values_positive,
   us_values_negative
 ) {
-  let client_merge_positive = mergeCount(client_values_positive, 0, 3);
-  let client_merge_negative = mergeCount(client_values_negative, 0, 3);
-  let us_merge_positive = mergeCount(us_values_positive, 0, 2);
-  let us_merge_negative = mergeCount(us_values_negative, 0, 2);
-  let client_merge_positive_map = turnArrayToObject(client_merge_positive);
-  let client_merge_negative_map = turnArrayToObject(client_merge_negative);
-  let us_merge_positive_map = turnArrayToObject(us_merge_positive);
-  let us_merge_negative_map = turnArrayToObject(us_merge_negative);
+    // 合并客户正数数组
+    let client_merge_positive = mergeCount(client_values_positive, 0, 3);
+    // 合并客户负数数组
+    let client_merge_negative = mergeCount(client_values_negative, 0, 3);
+    // 合并公司正数数组
+    let us_merge_positive = mergeCount(us_values_positive, 0, 2);
+    // 合并公司负数数组
+    let us_merge_negative = mergeCount(us_values_negative, 0, 2);
+    let client_merge_positive_map = turnArrayToObject(client_merge_positive);
+    let client_merge_negative_map = turnArrayToObject(client_merge_negative);
+    let us_merge_positive_map = turnArrayToObject(us_merge_positive);
+    let us_merge_negative_map = turnArrayToObject(us_merge_negative);
 
-  let merge_positive_array = signCountAllValues(
-    client_merge_positive_map,
-    us_merge_positive_map
-  );
+    // 合并公司与客户的正数数组
+    let merge_positive_array = signCountAllValues(
+      client_merge_positive_map,
+      us_merge_positive_map
+    );
+    // 合并公司与客户的负数数组
+    let merge_negative_array = signCountAllValues(
+      client_merge_negative_map,
+      us_merge_negative_map
+    );
 
-  let merge_negative_array = signCountAllValues(
-    client_merge_negative_map,
-    us_merge_negative_map
-  );
-
-  let merge_final_array = merge_positive_array.concat(merge_negative_array);
-  let merge_final_map = {};
-  merge_final_map = turnArrayToObject(merge_final_array);
-  let original_merge_array = [];
-  Object.values(merge_final_map).forEach((array) => {
-    for (let arr of array) {
-      original_merge_array.push(arr);
-    }
-  });
-  return original_merge_array;
-}
+    let merge_final_array = merge_positive_array.concat(merge_negative_array);
+    let merge_final_map = {};
+    /**
+     * 因为数组是乱序
+     * 偷懒没用任何算法
+     * 直接先转换成object对象
+     * 再通过Object.values转化成数组
+     */
+    merge_final_map = turnArrayToObject(merge_final_array);
+    let original_merge_array = [];
+    Object.values(merge_final_map).forEach((array) => {
+      for (let arr of array) {
+        original_merge_array.push(arr);
+      }
+    });
+    return original_merge_array;
+  }
 function countSignArray(
   client_values_positive,
   client_values_negative,
@@ -228,12 +242,15 @@ function countSignArray(
   return original_single_array;
 }
 
+//核心算法
 function signCountAllValues(client_group_map, us_group_map) {
-  let client_group_map_tmp = _.cloneDeep(client_group_map);
+  let client_group_map_tmp = _.cloneDeep(client_group_map); //深拷贝对象，不影响原有的数据
   let us_group_map_tmp = _.cloneDeep(us_group_map);
   let tableData = [];
-  Object.keys(client_group_map_tmp).map((key) => {
+  Object.keys(client_group_map_tmp).map((key) => { //根据对象key循环
     let client_array = client_group_map_tmp[key];
+    // 当客户拥有对应型号数据而公司数据里没有时
+    // 根据当前key值查出来的数据每条合并对应型号，对照表中的单价，数量为0
     let us_array = us_group_map_tmp[key];
     if (!us_array) {
       for (let i of client_array) {
@@ -241,6 +258,7 @@ function signCountAllValues(client_group_map, us_group_map) {
         tableData.push(array);
       }
     } else {
+      // 两边数量相等
       if (client_array.length === us_array.length) {
         let client_array_back = _.cloneDeep(client_array);
         let us_array_back = _.cloneDeep(us_array);
@@ -254,7 +272,7 @@ function signCountAllValues(client_group_map, us_group_map) {
           }
           tableData.push(array);
         }
-      } else if (client_array.length > us_array.length) {
+      } else if (client_array.length > us_array.length) { //客户的订单数量大于公司的订单数量
         let client_array_back = _.cloneDeep(client_array);
         let us_array_back = _.cloneDeep(us_array);
         let array = [];
@@ -268,7 +286,7 @@ function signCountAllValues(client_group_map, us_group_map) {
           array = i.concat([key, maps[key][3], 0]);
           tableData.push(array);
         }
-      } else if (client_array.length < us_array.length) {
+      } else if (client_array.length < us_array.length) { // 客户的订单数量小于公司的订单数量
         let client_array_back = _.cloneDeep(client_array);
         let us_array_back = _.cloneDeep(us_array);
         for (let i = 0; i < client_array_back.length; i++) {
@@ -296,6 +314,10 @@ function signCountAllValues(client_group_map, us_group_map) {
     delete client_group_map_tmp[key];
   });
 
+
+  /**
+   * 完成筛选后还遗留下来的数据进行另外的操作
+   */
   const left_client_map = Object.keys(client_group_map_tmp);
   const left_us_map = Object.keys(us_group_map_tmp);
   if (left_client_map.length > 0) {
