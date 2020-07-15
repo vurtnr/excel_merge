@@ -1,6 +1,7 @@
 const Excel = require("exceljs");
 const _ = require("lodash");
 const dayjs = require("dayjs");
+const logger = require('./log');
 
 
 (async function () {
@@ -42,6 +43,9 @@ const dayjs = require("dayjs");
       const values = row.values;
       values.shift()
       const date = dayjs(values[values.length - 2]).year(2021).format("YYYY/MM/DD");
+      if(!res[values[0]])
+        logger.info('未找到客户型号为:'+values[0]+'得商品，无法生成导入数据，请检查')
+        return
       const us_num = res[values[0]][2]
       const newRow = [
         us_num,
