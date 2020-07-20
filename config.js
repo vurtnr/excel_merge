@@ -1,5 +1,8 @@
+const path = require('path')
+const fs = require('fs')
+
 module.exports = {
-  includeColumn:['销售订单号','客户型号','本厂型号','规格','订单数量','销售下单'],
+  includeColumn:['状态','类型','销售订单号','客户型号','本厂型号','规格','订单数量','销售下单'],
   cut_index: [0, 1, 2, 4, 5, 7],
   c1: {
     "0201(0603)": "A",
@@ -48,6 +51,20 @@ module.exports = {
     "±20%": "H",
     "+50%/-20%": "J",
     "+80%/-20%": "K",
+  },
+  backupOrderNum:(orderList) => {
+    const obj = {};
+    for(let i of orderList){
+      obj[i] = i;
+    }
+    let json = JSON.stringify(obj)
+    const filepath = path.join(__dirname,'data/order_number.json')
+    fs.writeFileSync(filepath,json,(err) => {
+      if(err){
+        throw new Error("导出错误")
+      }
+      console.log("创建成功")
+    })
   },
   turnCapacitance: (origin) => {
     const reg1 = /^([0-9]+|0)$/;
